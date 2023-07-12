@@ -1,0 +1,336 @@
+  第一步：求出一个表达式的truth tree
+
+  1.生成真值表
+
+  2.根据真值表生成真值树（合并短路产生相同的两个子树）
+
+  
+
+
+复制代码
+/****************************************
+ * File: truth_tree.h
+ *
+ *A&B|C truth_table
+  0  0  1          1
+  0  1  1          1
+  1  0  1          1
+  1  1  0          1
+  1  1  1          1
+ *
+ * Complete Binary Tree
+ *                  -1(root)
+                /                \
+A:           0                      1
+          /    \                  /   \
+B:      0        1             0         1
+         \        \             \      /  \
+C:        1         1             1    0   1
+ *
+ *
+ * After merge
+ *  *                -1(root)
+                /               \
+A:           0                      1
+          /                       /   \
+B:      -1                      0       1
+         \                      \      /
+C:        1                       1   -1
+ *
+ *
+ * *****************************************/
+
+#ifndef UTIL_TRUTH_TREE_H
+#define UTIL_TRUTH_TREE_H
+
+#include <memory>
+#include <vector>
+
+namespace util {
+
+struct TruthTreeNode
+{
+    int8_t                         value;
+    std::shared_ptr<TruthTreeNode> left;
+    std::shared_ptr<TruthTreeNode> right;
+
+    explicit TruthTreeNode(int8_t in_v):value(in_v),left(nullptr),right(nullptr){}
+    TruthTreeNode(const TruthTreeNode&)            = delete;
+    TruthTreeNode(TruthTreeNode&&)                 = delete;
+    TruthTreeNode& operator=(const TruthTreeNode&) = delete;
+    TruthTreeNode& operator=(TruthTreeNode&&)      = delete;
+};
+
+using truth_table_t = std::vector<std::vector<bool>>;
+
+class TruthTree
+{
+public: //Constructors and destructor
+    TruthTree():m_root(nullptr){}
+
+    TruthTree(const TruthTree& tree)
+    {
+        m_root = copy_tree(tree.root());
+    }
+
+    TruthTree& operator=(const TruthTree& tree)
+    {
+        if (this == &tree)
+            return *this;
+
+        m_root = copy_tree(tree.root());
+        return *this;
+    }
+
+    TruthTree(TruthTree&&)                 = delete;
+    TruthTree& operator=(TruthTree&&)      = delete;
+    ~TruthTree()                           = default;
+
+public: //interface   
+    void initialize_tree(const truth_table_t& truth_table);
+
+    const std::shared_ptr<TruthTreeNode>& root() const
+    {
+        return m_root;
+    }
+
+    bool empty() const
+    {
+        if (nullptr == m_root)
+            return true;
+
+        if (nullptr == m_root->left && nullptr == m_root->right)
+            return true;
+
+        return false;
+    }
+
+private: //static member method
+    static std::shared_ptr<TruthTreeNode> copy_tree(const std::shared_ptr<TruthTreeNode>& parent_node_ptr);
+    static std::shared_ptr<TruthTreeNode> table_to_tree(const truth_table_t& truth_table);
+    static std::shared_ptr<TruthTreeNode> try_add_new_child_node(bool element, std::shared_ptr<TruthTreeNode> parent_node_ptr);
+    static std::shared_ptr<TruthTreeNode> add_new_child_node(bool element, std::shared_ptr<TruthTreeNode> parent_node_ptr);
+    static bool compare_tree(const std::shared_ptr<TruthTreeNode> left, const std::shared_ptr<TruthTreeNode> right);
+    static void merge_child_trees(std::shared_ptr<TruthTreeNode> parent_node_ptr);
+
+private: //member data
+    std::shared_ptr<TruthTreeNode> m_root;
+};
+
+}
+
+#endif //UTIL_TRUTH_TREE_H
+复制代码
+ 
+
+
+复制代码
+/*
+ * File:   truth_tree.cpp
+ */
+
+#include "truth_tree.h"
+#include <numeric>
+
+
+namespace util {
+
+void TruthTree::initialize_tree(const truth_table_t& truth_table)
+{
+    m_root = table_to_tree(truth_table);
+    merge_child_trees(m_root);
+}
+
+std::shared_ptr<TruthTreeNode> TruthTree::copy_tree(const std::shared_ptr<TruthTreeNode>& parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr)
+        return nullptr;
+
+    std::shared_ptr<TruthTreeNode> node_ptr = std::make_shared<TruthTreeNode>(parent_node_ptr->value);
+    node_ptr->left  = copy_tree(parent_node_ptr->left);
+    node_ptr->right = copy_tree(parent_node_ptr->right);
+
+    return node_ptr;
+}
+
+std::shared_ptr<TruthTreeNode> TruthTree::table_to_tree(const truth_table_t& truth_table)
+{
+    if (truth_table.empty())
+        return nullptr;
+
+    std::shared_ptr<TruthTreeNode> root = std::make_shared<TruthTreeNode>(-1);
+    for (size_t row = 0; row < truth_table.size(); ++row)
+    {
+        std::shared_ptr<TruthTreeNode> parent_node_ptr = root;
+        for (size_t column = 0; column < truth_table[row].size(); ++column)
+        {
+            std::shared_ptr<TruthTreeNode> child_node_ptr = try_add_new_child_node(truth_table[row][column], parent_node_ptr);
+            parent_node_ptr = child_node_ptr;
+        }
+    }
+
+    return root;
+}
+
+std::shared_ptr<TruthTreeNode> TruthTree::try_add_new_child_node(bool element, std::shared_ptr<TruthTreeNode> parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr)
+        return nullptr;
+
+    if (!element && nullptr != parent_node_ptr->left)
+        return parent_node_ptr->left;
+
+    if (element && nullptr != parent_node_ptr->right)
+        return parent_node_ptr->right;
+
+    return add_new_child_node(element, parent_node_ptr);
+}
+
+std::shared_ptr<TruthTreeNode> TruthTree::add_new_child_node(bool element, std::shared_ptr<TruthTreeNode> parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr)
+        return nullptr;
+
+    //false to left node, true to right node
+    if (!element)
+    {
+        parent_node_ptr->left = std::make_shared<TruthTreeNode>(0);
+        return parent_node_ptr->left;
+    }
+    else
+    {
+        parent_node_ptr->right = std::make_shared<TruthTreeNode>(1);
+        return parent_node_ptr->right;
+    }
+}
+
+/***************************Recursive create tree****************************************/
+/*
+                         root {-1,-1,(0,1,2,3,4)}
+
+A:         {0,0,(0,1)}                              {0,1,(2,3,4)}
+
+B: {1,0,(0)}         {1,1,(1)}              {1,0,(2)}           {1,1,(3,4)}
+
+C:     {2,1,(0)}        {2,1,(1)}      {2,1,(2)}            {2,0,(3)}   {2,1,(4)}
+
+struct truth_tree_node
+{
+    int8_t              level;//truth table row index
+    int8_t              value;
+    std::vector<size_t> index_vec;//truth table columns index
+    std::shared_ptr<truth_tree_node> left;
+    std::shared_ptr<truth_tree_node> right;
+    //std::vector<size_t> indexs(m_truth_table[0].size());
+    //std::iota(indexs.begin(), indexs.end(), 0);
+    //m_root = std::make_shared<truth_tree_node>(-1, -1, indexs);
+};
+
+void TruthTree::insert_child_node(std::shared_ptr<truth_tree_node> parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr)
+        return;
+
+    int8_t level = parent_node_ptr->level + 1;
+    if ( (level < 0) || (level >= m_truth_table.size()) )
+        return;
+
+    std::vector<size_t> left_indexs;
+    std::vector<size_t> right_indexs;
+    for(size_t i : parent_node.index_vec)
+    {
+        if(!m_truth_table[level][i])
+            left_indexs.push_back(i);
+        else
+            right_indexs.push_back(i);
+    }
+
+    if (!left_indexs.empty())
+        parent_node.left  = std::make_shared<truth_tree_node>(level, 0, left_indexs);
+
+    if (!right_indexs.empty())
+        parent_node.right = std::make_shared<truth_tree_node>(level, 1, right_indexs);
+}
+
+void TruthTree::SubCreat(std::shared_ptr<truth_tree_node> parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr)
+        return;
+
+    insert_child_node(parent_node_ptr);
+
+    SubCreat(parent_node_ptr->left);
+    SubCreat(parent_node_ptr->right);
+}
+***************************************************************************************/
+
+bool TruthTree::compare_tree(const std::shared_ptr<TruthTreeNode> left_tree, const std::shared_ptr<TruthTreeNode> right_tree)
+{
+    if ((nullptr == left_tree) && (nullptr == right_tree))
+    {
+        return true;
+    }
+
+    //if one is null and other is not null
+    if ((nullptr == left_tree) || (nullptr == right_tree))
+    {
+        return false;
+    }
+
+    if (left_tree->value != left_tree->value)
+    {
+        return false;
+    }
+
+    bool left  = compare_tree(left_tree->left, right_tree->left);
+    bool right = compare_tree(left_tree->right, right_tree->right);
+    return (left && right);
+}
+
+void TruthTree::merge_child_trees(std::shared_ptr<TruthTreeNode> parent_node_ptr)
+{
+    if (nullptr == parent_node_ptr || nullptr == parent_node_ptr->left || nullptr == parent_node_ptr->right)
+    {
+        return;
+    }
+
+    bool merge_flag = compare_tree(parent_node_ptr->left->left, parent_node_ptr->right->left)
+            && compare_tree(parent_node_ptr->left->right, parent_node_ptr->right->right);
+
+    if (merge_flag)
+    {
+        parent_node_ptr->left->value = -1;
+        parent_node_ptr->right       = nullptr; //delete right tree
+    }
+
+    merge_child_trees(parent_node_ptr->left);
+    merge_child_trees(parent_node_ptr->right);
+}
+
+
+
+}
+复制代码
+ 
+
+  第二步：计算表达式  
+
+  同时按层深度索引真值树，遍历表达式的变量（按需求值），当能走到树的叶子节点时说明本次表达式为true
+
+    
+
+  数据结构：
+
+  1.真值树：是一个二叉树，每层依次对应A，B，C...表达式成员；用真值表作为参数构造；提供Creat();Empty();Root()等常见接口
+
+  2.表达式类：专门负责解析字符串(eg:A&B|C)，提供接口：获取{表达式成员序列,真值树}；通过{表达式成员序列,真值树}+成员求值函数对象 计算表达式值
+
+ 
+
+  备注：
+
+  1.参照http://www.cppblog.com/vczh/archive/2008/06/15/53373.html和《C++沉思录》第八章写出eval::IcomputeBoolExpr()接口  
+
+  2.真值树的层数最好在16层以内，过大可能过于增加构造树的时间；对于过大的表达式建议不考虑用真值树实现表达式短路。
+
+  3.真值树的思路相当于预先把所有可能的值都求一遍，缓存起来；需要读编译原理，了解GCC语法树，可能有更好的思路实现表达式短路。
